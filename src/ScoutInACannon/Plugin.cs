@@ -5,6 +5,7 @@ using HarmonyLib;
 using Photon.Pun;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SocialPlatforms;
 
 namespace ScoutInACannon
 {
@@ -15,6 +16,7 @@ namespace ScoutInACannon
         static ConfigEntry<KeyCode> emulateKey;
         static ConfigEntry<float> extraUp;
         static ConfigEntry<float> deleteTime;
+        static ConfigEntry<float> stopTime;
         static bool holdingCannon = false;
         static Vector3 tubeForward;
         static Vector3 spawnPos;
@@ -26,8 +28,9 @@ namespace ScoutInACannon
 
             Log.LogInfo($"Plugin {Name} is loaded!");
             emulateKey = Config.Bind("hi dryeetman", "Emulate Key", KeyCode.X);
-            extraUp = Config.Bind("hi dryeetman", "Up Correctment", 1.5f);
-            deleteTime = Config.Bind("hi dryeetman", "deleteTime", 5f);
+            extraUp = Config.Bind("hi dryeetman", "Up Correctment", 0.25f, new ConfigDescription("", new AcceptableValueRange<float>(-2f, 2f)));
+            deleteTime = Config.Bind("hi dryeetman", "deleteTime", 5f, new ConfigDescription("", new AcceptableValueRange<float>(1f, 10f)));
+            stopTime = Config.Bind("hi dryeetman", "stopTime", 1.5f, new ConfigDescription("", new AcceptableValueRange<float>(0f, 5f)));
             Harmony harmony = new Harmony("ScoutInACannon");
             harmony.PatchAll();
         }
@@ -36,15 +39,19 @@ namespace ScoutInACannon
         {
             if (holdingCannon && Input.GetKeyDown(emulateKey.Value))
             {
-                ZombieObj = Instantiate(Resources.Load<GameObject>(ZombiePrefab), spawnPos + Vector3.up * extraUp.Value, new Quaternion(0, 0, 0, 0));
+                GameObject prefab = Resources.Load<GameObject>(ZombiePrefab);
+                prefab.GetComponent<MushroomZombie>().isNPCZombie = false;
+                Destroy(prefab.GetComponent<CharacterItems>());
+                Destroy(prefab.GetComponent<CharacterCustomization>());
+                //RemoveCustomScriptsOnly(prefab);
+                ZombieObj = Instantiate(prefab, spawnPos + Vector3.up * extraUp.Value, new Quaternion(0, 0, 0, 0));
                 StartCoroutine(disableCollidersForASecond());
-                ZombieObj.GetComponent<MushroomZombie>().isNPCZombie = false;
-                LaunchTarget(ZombieObj.GetComponent<Character>());
+                StartCoroutine(LaunchPlayer());
                 Destroy(ZombieObj, deleteTime.Value);
             }
 
         }
-        private void LaunchTarget(Character c)
+        static void LaunchTarget(Character c)
         {
             c.data.launchedByCannon = true;
             c.RPCA_Fall(1);
@@ -137,6 +144,33 @@ namespace ScoutInACannon
                 {
                     col.enabled = true;
                 }
+            }
+        }
+
+        static System.Collections.IEnumerator LaunchPlayer()
+        {
+            LaunchTarget(ZombieObj.GetComponent<Character>());
+            yield return new WaitForSeconds(stopTime.Value);
+
+            foreach (Rigidbody rb in ZombieObj.GetComponentsInChildren<Rigidbody>())
+            {
+                if (rb.isKinematic) continue;
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+        }
+        public void RemoveCustomScriptsOnly(GameObject go)
+        {
+            MonoBehaviour[] scripts = go.GetComponents<MonoBehaviour>();
+
+            for (int i = scripts.Length - 1; i >= 0; i--)
+            {
+                if (scripts[i] == this) continue;
+
+                // Optional: If you want to skip PhotonView specifically
+                //if (scripts[i].GetType().Name.Contains("PhotonView")) continue;
+
+                DestroyImmediate(scripts[i]);
             }
         }
     }
